@@ -1,11 +1,13 @@
 import model.*;
 
 import java.util.*;
+import java.util.logging.Logger;
 
 public final class MyStrategy implements Strategy {
+    // Constants section
     private static final double WAYPOINT_RADIUS = 100.0D;
+    private static final double LOW_HP_FACTOR = 0.35D;
 
-    private static final double LOW_HP_FACTOR = 0.25D;
 
     /**
      * Ключевые точки для каждой линии, позволяющие упростить управление перемещением волшебника.
@@ -38,14 +40,14 @@ public final class MyStrategy implements Strategy {
     public void move(Wizard self, World world, Game game, Move move) {
         initializeStrategy(self, game);
         initializeTick(self, world, game, move);
-
+        move.setStrafeSpeed(2000);
         // Постоянно двигаемся из-стороны в сторону, чтобы по нам было сложнее попасть.
         // Считаете, что сможете придумать более эффективный алгоритм уклонения? Попробуйте! ;)
-        move.setStrafeSpeed(random.nextBoolean() ? game.getWizardStrafeSpeed() : -game.getWizardStrafeSpeed());
+        move.setStrafeSpeed(random.nextBoolean() ? self.getSpeedY() : -self.getSpeedY());
 
         // Если осталось мало жизненной энергии, отступаем к предыдущей ключевой точке на линии.
         if (self.getLife() < self.getMaxLife() * LOW_HP_FACTOR) {
-            goTo(getPreviousWaypoint());
+            goTo(getPreviousWaypoint(), false);
             return;
         }
 
@@ -54,6 +56,8 @@ public final class MyStrategy implements Strategy {
         // Если видим противника ...
         if (nearestTarget != null) {
             double distance = self.getDistanceTo(nearestTarget);
+
+            //Check
 
             // ... и он в пределах досягаемости наших заклинаний, ...
             if (distance <= self.getCastRange()) {
@@ -65,9 +69,16 @@ public final class MyStrategy implements Strategy {
                 // Если цель перед нами, ...
                 if (StrictMath.abs(angle) < game.getStaffSector() / 2.0D) {
                     // ... то атакуем.
-                    move.setAction(ActionType.MAGIC_MISSILE);
-                    move.setCastAngle(angle);
-                    move.setMinCastDistance(distance - nearestTarget.getRadius() + game.getMagicMissileRadius());
+
+                    if (self.getRemainingActionCooldownTicks() == 0) {
+                        if (self.getRemainingCooldownTicksByAction()[2] == 0) {
+                            move.setAction(ActionType.MAGIC_MISSILE);
+                            move.setCastAngle(angle);
+                            move.setMinCastDistance(distance - nearestTarget.getRadius() + game.getMagicMissileRadius() - 10);
+                        } else {
+                            move.setAction(ActionType.STAFF);
+                        }
+                    }
                 }
 
                 return;
@@ -75,7 +86,7 @@ public final class MyStrategy implements Strategy {
         }
 
         // Если нет других действий, просто продвигаемся вперёд.
-        goTo(getNextWaypoint());
+        goTo(getNextWaypoint(), true);
     }
 
     /**
@@ -92,10 +103,12 @@ public final class MyStrategy implements Strategy {
 
             waypointsByLane.put(LaneType.MIDDLE, new Point2D[]{
                     new Point2D(100.0D, mapSize - 100.0D),
+                    new Point2D(200.0D, mapSize - 100.0D),
+                    new Point2D(200.0D, mapSize - 200.0D),
                     random.nextBoolean()
                             ? new Point2D(600.0D, mapSize - 200.0D)
                             : new Point2D(200.0D, mapSize - 600.0D),
-                    new Point2D(800.0D, mapSize - 800.0D),
+                    new Point2D(800.0D, mapSize - 1000.0D),
                     new Point2D(mapSize - 600.0D, 600.0D)
             });
 
@@ -132,7 +145,7 @@ public final class MyStrategy implements Strategy {
                 case 2:
                 case 6:
                 case 7:
-                    lane = LaneType.TOP;
+                    lane = LaneType.MIDDLE;
                     break;
                 case 3:
                 case 8:
@@ -142,7 +155,7 @@ public final class MyStrategy implements Strategy {
                 case 5:
                 case 9:
                 case 10:
-                    lane = LaneType.BOTTOM;
+                    lane = LaneType.MIDDLE;
                     break;
                 default:
             }
@@ -223,13 +236,23 @@ public final class MyStrategy implements Strategy {
     /**
      * Простейший способ перемещения волшебника.
      */
-    private void goTo(Point2D point) {
+    private void goTo(Point2D point, boolean next) {
         double angle = self.getAngleTo(point.getX(), point.getY());
+        if (next) {
 
-        move.setTurn(angle);
-
-        if (StrictMath.abs(angle) < game.getStaffSector() / 4.0D) {
-            move.setSpeed(game.getWizardForwardSpeed());
+            move.setTurn(angle);
+//            Logger log = Logger.getLogger("global");
+//            log.info(Double.toString(angle));
+//            move.setTurn(angle);
+            if (StrictMath.abs(angle) < game.getStaffSector() / 1.0D) {
+                move.setSpeed(4.0D);//game.getWizardForwardSpeed());
+            }
+        }
+        else {
+            move.setTurn(-angle);
+            if (StrictMath.abs(-angle) > -game.getStaffSector() / 1.15D) {
+                move.setSpeed(-3.0D);//game.getWizardForwardSpeed());
+            }
         }
     }
 
@@ -246,7 +269,7 @@ public final class MyStrategy implements Strategy {
         double nearestTargetDistance = Double.MAX_VALUE;
 
         for (LivingUnit target : targets) {
-            if (target.getFaction() == Faction.NEUTRAL || target.getFaction() == self.getFaction()) {
+            if (target.getFaction() == self.getFaction()) {
                 continue;
             }
 
